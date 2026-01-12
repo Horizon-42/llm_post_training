@@ -8,7 +8,22 @@ This document explains the Supervised Fine-Tuning (SFT) stage used for "Cold Sta
 
 ## 1. What is Cold Start SFT?
 
-### 1.1 Purpose
+### 1.1 The Full DeepSeek-R1 Pipeline
+
+According to the DeepSeek-R1 technical report [1], the complete training pipeline is:
+
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│  Cold-Start SFT │ -> │   RL Stage 1    │ -> │ Rejection       │ -> │   RL Stage 2    │
+│  (thousands of  │    │   (GRPO with    │    │ Sampling + SFT  │    │ (Helpfulness &  │
+│   examples)     │    │  rule rewards)  │    │ (reasoning +    │    │  Harmlessness)  │
+│                 │    │                 │    │  non-reasoning) │    │                 │
+└─────────────────┘    └─────────────────┘    └─────────────────┘    └─────────────────┘
+```
+
+> "In the initial stage, we collect thousands of cold-start data that exhibits a conversational, human-aligned thinking process." — DeepSeek-R1 [1]
+
+### 1.2 Purpose
 
 Cold Start SFT serves as the **initialization phase** before GRPO training. Its primary goals are:
 
@@ -301,9 +316,54 @@ Let me calculate 15% of 80...
 
 ---
 
+## 8. DeepSeek-R1 GRPO Hyperparameters (Reference)
+
+According to the DeepSeek-R1 paper [1], the official GRPO hyperparameters are:
+
+### 8.1 First RL Stage
+
+```python
+# DeepSeek-R1 Official Settings
+LEARNING_RATE = 3e-6
+KL_COEFFICIENT = 0.001      # Much lower than typical PPO
+EPSILON = 10                # Clip ratio (much higher than PPO's 0.2!)
+TEMPERATURE = 1.0           # High temperature for diverse exploration
+NUM_GENERATIONS = 16        # 16 outputs per question
+MAX_LENGTH = 32768          # Very long sequences
+BATCH_SIZE = 32             # Questions per step (effective batch = 32 × 16 = 512)
+REFERENCE_UPDATE_STEPS = 400  # Update reference model every 400 steps
+```
+
+### 8.2 Language Consistency Reward
+
+DeepSeek-R1 introduces a **language consistency reward** to prevent language mixing:
+
+$$Reward_{language} = \frac{Num(Words_{target})}{Num(Words)}$$
+
+This reward is added to both reasoning and non-reasoning data.
+
+### 8.3 Second RL Stage
+
+```python
+TEMPERATURE = 0.7           # Lower for coherent generation
+TOTAL_STEPS = 1700
+# General instruction data added in final 400 steps only
+```
+
+### 8.4 Combined Reward Function
+
+$$Reward = Reward_{reasoning} + Reward_{general} + Reward_{language}$$
+
+Where:
+- $Reward_{reasoning} = Reward_{rule}$ (format + accuracy)
+- $Reward_{general} = Reward_{reward\_model} + Reward_{format}$
+
+---
+
 ## References
 
-[1] DeepSeek-AI. "DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning." arXiv:2401.02954, 2024.
+[1] DeepSeek-AI. "DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning." arXiv:2501.12948, 2025. https://arxiv.org/abs/2501.12948
+    - Key source for training pipeline and GRPO hyperparameters (EPSILON=10, BETA=0.001, etc.)
 
 [2] Hu, E. J., et al. "LoRA: Low-Rank Adaptation of Large Language Models." arXiv:2106.09685, 2021.
 
